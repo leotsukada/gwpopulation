@@ -521,11 +521,11 @@ class SignalNoiseLikelihood(HyperparameterLikelihood):
         super(SignalNoiseLikelihood, self).__init__(**kwargs)
         self.conversion_function = self._wrapper_convert(self.conversion_function)
         if ln_p_of_x_signal is None:
-            self.ln_p_of_x_signal = np.array([0] * self.n_posteriors)
+            self.ln_p_of_x_signal = xp.array([0] * self.n_posteriors)
         else:
             self.ln_p_of_x_signal = ln_p_of_x_signal
         if ln_p_of_x_noise is None:
-            self.ln_p_of_x_noise = np.array([-np.inf] * self.n_posteriors)
+            self.ln_p_of_x_noise = xp.array([-xp.inf] * self.n_posteriors)
         else:
             self.ln_p_of_x_noise = ln_p_of_x_noise
 
@@ -548,40 +548,13 @@ class SignalNoiseLikelihood(HyperparameterLikelihood):
             else:
                 vt = self.selection_function(parameters)
             parameters["count_signal"] = parameters["rate"] * vt
-            added_keys += ["count_signal"]
+            if added_keys is None:
+                added_keys = ["count_signal"]
+            else:
+                added_keys += ["count_signal"]
             return parameters, added_keys
 
         return _convert_rate2count
-
-    def _get_selection_factor(self, return_uncertainty=True):
-        r"""
-        The selection factor for the rate likelihood is
-
-        .. math::
-
-            \ln P_{\rm det} = N \ln R - N_{\rm exp}(\Lambda)
-
-        The uncertainty is given by
-
-        .. math::
-
-            \sigma^2 = \frac{N_{\rm exp}(\Lambda) \sigma^2_{\rm det}}{P_{\rm det}^2}
-
-        Parameters
-        ----------
-        return_uncertainty: bool
-            Whether to return the uncertainty in the selection factor.
-        """
-        selection, variance = self._selection_function_with_uncertainty()
-        n_expected = selection * self.parameters["rate"]
-        total_selection = -n_expected + self.n_posteriors * xp.log(
-            self.parameters["rate"]
-        )
-        if return_uncertainty:
-            total_variance = n_expected * variance / selection**2
-            return total_selection, total_variance
-        else:
-            return total_selection
 
     def generate_rate_posterior_sample(self):
         """
@@ -599,20 +572,23 @@ class SignalNoiseLikelihood(HyperparameterLikelihood):
         ln_bayes_factors, variances = self._compute_per_event_ln_bayes_factors()
         C1 = self.parameters["count_signal"]
         C0 = self.parameters["count_noise"]
-        xi = C1 / (C0 + C1)
-        ln_signal = np.log(xi) + self.ln_p_of_x_signal + ln_bayes_factors
-        ln_noise = np.log(1 - xi) + self.ln_p_of_x_noise
-        # FIXME : see how this selection term gets multiplied in the new likelihood
-        # FIXME : apply the selection factor for rate too?
-        selection, selection_variance = self._get_selection_factor()
-        # NOTE : selection = N * (log of event-wise selection), so needs to be
-        # divided by N as an argument of logaddexp
-        ln_bf_signal_noise = np.logaddexp(
-            ln_signal + selection / self.n_posteriors, ln_noise
-        )
-        ln_l = xp.sum(ln_bf_signal_noise)
         counts_total = C0 + C1
-        ln_l += self.n_posteriors * np.log(counts_total) - counts_total
+        xi = C1 / counts_total
+        # NOTE : _get_selection_factor() returns -N*ln(alpha(Lambda)), so it needs to be divided by N to get a selection factor *per* event
+        total_selection, selection_variance = self._get_selection_factor()
+        noise_selection = self.parameters["noise_selection_factor"]
+        # NOTE : this likelihood is explicitly normalized by the product of the
+        # noise evidence across the given events, i.e., ln_bayes_factors is
+        # given for the signal.
+        ln_signal = (
+            xp.log(xi)
+            + self.ln_p_of_x_signal
+            + ln_bayes_factors
+            + total_selection / self.n_posteriors
+        )
+        ln_noise = xp.log(1 - xi) + self.ln_p_of_x_noise - xp.log(noise_selection)
+        ln_l = xp.sum(xp.logaddexp(ln_signal, ln_noise))
+        ln_l += self.n_posteriors * xp.log(counts_total) - counts_total
         # FIXME : this variance also needs to be modified too?
         variance = xp.sum(variances)
         variance += selection_variance
