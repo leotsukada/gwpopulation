@@ -129,3 +129,14 @@ def mu_var_max_to_alpha_beta_max(mu, var, amax):
     alpha = (mu**2 * (1 - mu) - mu * var) / var
     beta = (mu * (1 - mu) ** 2 - (1 - mu) * var) / var
     return alpha, beta, amax
+
+
+def rate_to_count(parameters_dict, selection_function):
+    if hasattr(selection_function, "detection_efficiency") and hasattr(
+        selection_function, "surveyed_hypervolume"
+    ):
+        efficiency, _ = selection_function.detection_efficiency(parameters_dict)
+        vt = efficiency * selection_function.surveyed_hypervolume(parameters_dict)
+    else:
+        vt = selection_function(parameters_dict)
+    return parameters_dict["rate"] * vt

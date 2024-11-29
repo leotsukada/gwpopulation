@@ -5,7 +5,7 @@ The likelihood function used for population inference is given be
 .. math::
 
     {\cal L}(\{d_i\} | \Lambda) &= \prod_i {\cal L}(d_i | \Lambda, {\rm det})
-    
+
     &= \prod_i \frac{{\cal L}(d_i | \Lambda)}{P_{\rm det}(\Lambda)}
 
     &= \frac{1}{P_{\rm det}^{N}(\Lambda)} \prod_i \int d\theta_i p(d_i | \theta_i) \pi(\theta_i | \Lambda).
@@ -505,56 +505,67 @@ class SignalNoiseLikelihood(HyperparameterLikelihood):
 
     def __init__(
         self,
-        ln_p_of_x_signal=None,
-        ln_p_of_x_noise=None,
+        posteriors,
+        hyper_prior,
+        lnp_of_x_signal=None,
+        lnp_of_x_noise=None,
         **kwargs,
     ):
         """
         Parameters
         ----------
-        ln_p_of_x_signal: list, optional
+        lnp_of_x_signal: list, optional
             A list of P(ranking statistics|signal) for each event (Default : 0 for all)
-        ln_p_of_x_noise: list, optional
+        lnp_of_x_noise: list, optional
             A list of P(ranking statistics|noise) for each event (Default : -inf for all)
         """
 
-        super(SignalNoiseLikelihood, self).__init__(**kwargs)
-        self.conversion_function = self._wrapper_convert(self.conversion_function)
-        if ln_p_of_x_signal is None:
-            self.ln_p_of_x_signal = xp.array([0] * self.n_posteriors)
+        super(SignalNoiseLikelihood, self).__init__(
+            posteriors=posteriors, hyper_prior=hyper_prior, **kwargs
+        )
+        self.conversion_function = self._wrapper_convert_rate_to_count(
+            self.conversion_function
+        )
+        if lnp_of_x_signal is None:
+            self.lnp_of_x_signal = xp.array([0] * self.n_posteriors)
         else:
-            self.ln_p_of_x_signal = ln_p_of_x_signal
-        if ln_p_of_x_noise is None:
-            self.ln_p_of_x_noise = xp.array([-xp.inf] * self.n_posteriors)
+            self.lnp_of_x_signal = xp.array(lnp_of_x_signal)
+        if lnp_of_x_noise is None:
+            self.lnp_of_x_noise = xp.array([-xp.inf] * self.n_posteriors)
         else:
-            self.ln_p_of_x_noise = ln_p_of_x_noise
+            self.lnp_of_x_noise = xp.array(lnp_of_x_noise)
 
     __doc__ += HyperparameterLikelihood.__init__.__doc__
 
-    def _wrapper_convert(self, convert_func):
+    def _wrapper_convert_rate_to_count(self, convert_func):
         """
         Docs
         """
+        import pandas as pd
 
-        def _convert_rate2count(*args, **kwargs):
+        from gwpopulation.conversions import rate_to_count
+
+        def _convert_rate_to_count(*args, **kwargs):
             parameters, added_keys = convert_func(*args, **kwargs)
-            if hasattr(self.selection_function, "detection_efficiency") and hasattr(
-                self.selection_function, "surveyed_hypervolume"
-            ):
-                efficiency, _ = self.selection_function.detection_efficiency(parameters)
-                vt = efficiency * self.selection_function.surveyed_hypervolume(
-                    parameters
+            if type(parameters) == pd.core.frame.DataFrame:
+                count_signal = list()
+                for ii in range(len(parameters)):
+                    parameters_sample = dict(parameters.iloc[ii])
+                    count_signal.append(
+                        rate_to_count(parameters_sample, self.selection_function)
+                    )
+            elif type(parameters) == dict:
+                count_signal = rate_to_count(parameters, self.selection_function)
+            else:
+                ValueError(
+                    f"given 'parameters' type ({type(parameters)}) is neither dictionary nor pandas DataFrame."
                 )
-            else:
-                vt = self.selection_function(parameters)
-            parameters["count_signal"] = parameters["rate"] * vt
-            if added_keys is None:
-                added_keys = ["count_signal"]
-            else:
-                added_keys += ["count_signal"]
+            parameters["count_signal"] = count_signal
+            if "remove" in kwargs and kwargs["remove"]:
+                added_keys.append("count_signal")
             return parameters, added_keys
 
-        return _convert_rate2count
+        return _convert_rate_to_count
 
     def generate_rate_posterior_sample(self):
         """
@@ -582,11 +593,11 @@ class SignalNoiseLikelihood(HyperparameterLikelihood):
         # given for the signal.
         ln_signal = (
             xp.log(xi)
-            + self.ln_p_of_x_signal
+            + self.lnp_of_x_signal
             + ln_bayes_factors
             + total_selection / self.n_posteriors
         )
-        ln_noise = xp.log(1 - xi) + self.ln_p_of_x_noise - xp.log(noise_selection)
+        ln_noise = xp.log(1 - xi) + self.lnp_of_x_noise - xp.log(noise_selection)
         ln_l = xp.sum(xp.logaddexp(ln_signal, ln_noise))
         ln_l += self.n_posteriors * xp.log(counts_total) - counts_total
         # FIXME : this variance also needs to be modified too?
