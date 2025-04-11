@@ -507,6 +507,7 @@ class SignalNoiseLikelihood(HyperparameterLikelihood):
         self,
         posteriors,
         hyper_prior,
+        ln_pe_noise_evidences=None, # PE noise evidence
         lnp_of_x_signal=None,
         lnp_of_x_noise=None,
         **kwargs,
@@ -514,6 +515,8 @@ class SignalNoiseLikelihood(HyperparameterLikelihood):
         """
         Parameters
         ----------
+        ln_pe_noise_evidences: list, optional
+            Log PE noise evidences for each event used to compute the noise term in the full likelihood
         lnp_of_x_signal: list, optional
             A list of P(ranking statistics|signal) for each event (Default : 0 for all)
         lnp_of_x_noise: list, optional
@@ -534,6 +537,17 @@ class SignalNoiseLikelihood(HyperparameterLikelihood):
             self.lnp_of_x_noise = xp.array([-xp.inf] * self.n_posteriors)
         else:
             self.lnp_of_x_noise = xp.array(lnp_of_x_noise)
+
+        if ln_pe_noise_evidences is not None:
+            if not "ln_evidences" in kwargs:
+                raise ValueError("ln_evidences (PE signal evidence) must be provided when SignalNoiseLikelihood is used.")
+            if any([ln_evidence == None for ln_evidence in kwargs["ln_evidences"]]):
+                raise ValueError("some of given ln_evidences is None. ln_evidences : %s" % ",".join(kwargs["ln_evidences"]))
+            if any([ln_pe_noise_evidence == None for ln_pe_noise_evidence in ln_pe_noise_evidences]):
+                raise ValueError("some of given ln_pe_noise_evidences is None. ln_pe_noise_evidences : %s" % ",".join(ln_pe_noise_evidences))
+            self.ln_pe_bayes_factor = kwargs["ln_evidences"] - ln_pe_noise_evidences
+        else:
+            raise ValueError("ln_pe_noise_evidence must be provided when SignalNoiseLikelihood is used.")
 
     __doc__ += HyperparameterLikelihood.__init__.__doc__
 
@@ -597,7 +611,8 @@ class SignalNoiseLikelihood(HyperparameterLikelihood):
             + ln_bayes_factors
             + total_selection / self.n_posteriors
         )
-        ln_noise = xp.log(1 - xi) + self.lnp_of_x_noise - xp.log(noise_selection)
+        # NOTE : self.ln_pe_bayes_factor is ln(*PE* signal evidence / *PE* noise evidence). The noise term has the inverse of this Bayes factor, so it needs to be subtracted in log scale.
+        ln_noise = xp.log(1 - xi) + self.lnp_of_x_noise - xp.log(noise_selection) - self.ln_pe_bayes_factor
         ln_l = xp.sum(xp.logaddexp(ln_signal, ln_noise))
         ln_l += self.n_posteriors * xp.log(counts_total) - counts_total
         # FIXME : this variance also needs to be modified too?
