@@ -507,7 +507,7 @@ class SignalNoiseLikelihood(HyperparameterLikelihood):
         self,
         posteriors,
         hyper_prior,
-        ln_pe_noise_evidences=None, # PE noise evidence
+        ln_pe_bayes_factors=None,
         lnp_of_x_signal=None,
         lnp_of_x_noise=None,
         **kwargs,
@@ -515,8 +515,8 @@ class SignalNoiseLikelihood(HyperparameterLikelihood):
         """
         Parameters
         ----------
-        ln_pe_noise_evidences: list, optional
-            Log PE noise evidences for each event used to compute the noise term in the full likelihood
+        ln_pe_bayes_factors: list, optional
+            Log PE Bayes factor for each event used to compute the noise term in the full likelihood
         lnp_of_x_signal: list, optional
             A list of P(ranking statistics|signal) for each event (Default : 0 for all)
         lnp_of_x_noise: list, optional
@@ -538,16 +538,16 @@ class SignalNoiseLikelihood(HyperparameterLikelihood):
         else:
             self.lnp_of_x_noise = xp.array(lnp_of_x_noise)
 
-        if ln_pe_noise_evidences is not None:
+        if ln_pe_bayes_factors is not None:
             if not "ln_evidences" in kwargs:
                 raise ValueError("ln_evidences (PE signal evidence) must be provided when SignalNoiseLikelihood is used.")
             if any([ln_evidence == None for ln_evidence in kwargs["ln_evidences"]]):
                 raise ValueError("some of given ln_evidences is None. ln_evidences : %s" % ",".join(kwargs["ln_evidences"]))
-            if any([ln_pe_noise_evidence == None for ln_pe_noise_evidence in ln_pe_noise_evidences]):
-                raise ValueError("some of given ln_pe_noise_evidences is None. ln_pe_noise_evidences : %s" % ",".join(ln_pe_noise_evidences))
-            self.ln_pe_bayes_factor = kwargs["ln_evidences"] - ln_pe_noise_evidences
+            if any([ln_pe_bayes_factor == None for ln_pe_bayes_factor in ln_pe_bayes_factors]):
+                raise ValueError("some of given ln_pe_bayes_factors is None. ln_pe_bayes_factors : %s" % ",".join(ln_pe_bayes_factors))
+            self.ln_pe_bayes_factor = xp.array(ln_pe_bayes_factors)
         else:
-            raise ValueError("ln_pe_noise_evidence must be provided when SignalNoiseLikelihood is used.")
+            raise ValueError("ln_pe_bayes_factor must be provided when SignalNoiseLikelihood is used.")
 
     __doc__ += HyperparameterLikelihood.__init__.__doc__
 
@@ -603,8 +603,9 @@ class SignalNoiseLikelihood(HyperparameterLikelihood):
         total_selection, selection_variance = self._get_selection_factor()
         noise_selection = self.parameters["noise_selection_factor"]
         # NOTE : this likelihood is explicitly normalized by the product of the
-        # noise evidence across the given events, i.e., ln_bayes_factors is
-        # given for the signal.
+        # "noise" evidence (pop inference perspective) across the given events,
+        # i.e., ln_bayes_factors (p(data | hyper parameter)/p(data | default PE
+        # prior)) is given for the signal.
         ln_signal = (
             xp.log(xi)
             + self.lnp_of_x_signal
