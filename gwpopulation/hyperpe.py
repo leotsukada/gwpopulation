@@ -601,20 +601,20 @@ class SignalNoiseLikelihood(HyperparameterLikelihood):
         xi = C1 / counts_total
         # NOTE : _get_selection_factor() returns -N*ln(alpha(Lambda)), so it needs to be divided by N to get a selection factor *per* event
         total_selection, selection_variance = self._get_selection_factor()
-        noise_selection = self.parameters["noise_selection_factor"]
+        # NOTE : the noise_selection_factor is normalized by the signal selection factor, alpha, i.e., exp(-(total_selection / self.n_posteriors))
+        noise_selection = xp.log(self.parameters["noise_selection_factor"])
         # NOTE : this likelihood is explicitly normalized by the product of the
         # "noise" evidence (pop inference perspective) across the given events,
         # i.e., ln_bayes_factors (p(data | hyper parameter)/p(data | default PE
         # prior)) is given for the signal.
         ln_signal = (
-            xp.log(xi)
-            + self.lnp_of_x_signal
+            self.lnp_of_x_signal
             + ln_bayes_factors
             + total_selection / self.n_posteriors
         )
         # NOTE : self.ln_pe_bayes_factor is ln(*PE* signal evidence / *PE* noise evidence). The noise term has the inverse of this Bayes factor, so it needs to be subtracted in log scale.
-        ln_noise = xp.log(1 - xi) + self.lnp_of_x_noise - xp.log(noise_selection) - self.ln_pe_bayes_factor
-        ln_l = xp.sum(xp.logaddexp(ln_signal, ln_noise))
+        ln_noise = self.lnp_of_x_noise - noise_selection - self.ln_pe_bayes_factor
+        ln_l = xp.sum(xp.logaddexp(ln_signal + xp.log(xi), ln_noise + xp.log(1 - xi)))
         ln_l += self.n_posteriors * xp.log(counts_total) - counts_total
         # FIXME : this variance also needs to be modified too?
         variance = xp.sum(variances)
