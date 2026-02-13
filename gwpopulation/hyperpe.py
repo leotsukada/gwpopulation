@@ -575,8 +575,10 @@ class SignalNoiseLikelihood(HyperparameterLikelihood):
                     f"given 'parameters' type ({type(parameters)}) is neither dictionary nor pandas DataFrame."
                 )
             parameters["count_signal"] = count_signal
+            parameters["count_total"] = count_signal + parameters["count_noise"]
             if "remove" in kwargs and kwargs["remove"]:
                 added_keys.append("count_signal")
+                added_keys.append("count_total")
             return parameters, added_keys
 
         return _convert_rate_to_count
@@ -597,11 +599,10 @@ class SignalNoiseLikelihood(HyperparameterLikelihood):
         ln_bayes_factors, variances = self._compute_per_event_ln_bayes_factors()
         C1 = self.parameters["count_signal"]
         C0 = self.parameters["count_noise"]
-        counts_total = C0 + C1
+        counts_total = self.parameters["count_total"]
         xi = C1 / counts_total
         # NOTE : _get_selection_factor() returns -N*ln(alpha(Lambda)), so it needs to be divided by N to get a selection factor *per* event
         total_selection, selection_variance = self._get_selection_factor()
-        # NOTE : the noise_selection_factor is normalized by the signal selection factor, alpha, i.e., exp(-(total_selection / self.n_posteriors))
         noise_selection = xp.log(self.parameters["noise_selection_factor"])
         # NOTE : this likelihood is explicitly normalized by the product of the
         # "noise" evidence (pop inference perspective) across the given events,
