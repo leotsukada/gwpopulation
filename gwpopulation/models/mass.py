@@ -590,10 +590,11 @@ class BaseSmoothedMassDistribution:
 
     def p_m1(self, dataset, **kwargs):
         mmin = kwargs.get("mmin", self.mmin)
+        mmax = kwargs.get("mmax", self.mmax)
         delta_m = kwargs.pop("delta_m", 0)
         p_m = self.__class__.primary_model(dataset["mass_1"], **kwargs)
         p_m *= self.smoothing(
-            dataset["mass_1"], mmin=mmin, mmax=self.mmax, delta_m=delta_m
+            dataset["mass_1"], mmin=mmin, mmax=mmax, delta_m=delta_m
         )
         norm = self.norm_p_m1(delta_m=delta_m, **kwargs)
         return p_m / norm
@@ -601,10 +602,11 @@ class BaseSmoothedMassDistribution:
     def norm_p_m1(self, delta_m, **kwargs):
         """Calculate the normalisation factor for the primary mass"""
         mmin = kwargs.get("mmin", self.mmin)
+        mmax = kwargs.get("mmax", self.mmax)
         if "jax" not in xp.__name__ and delta_m == 0:
             return 1
         p_m = self.__class__.primary_model(self.m1s, **kwargs)
-        p_m *= self.smoothing(self.m1s, mmin=mmin, mmax=self.mmax, delta_m=delta_m)
+        p_m *= self.smoothing(self.m1s, mmin=mmin, mmax=mmax, delta_m=delta_m)
 
         norm = xp.nan_to_num(xp.trapz(p_m, self.m1s)) * (delta_m != 0) + 1 * (
             delta_m == 0
